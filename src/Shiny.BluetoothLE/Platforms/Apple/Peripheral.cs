@@ -9,14 +9,12 @@ using Shiny.BluetoothLE.Intrastructure;
 
 namespace Shiny.BluetoothLE;
 
-
 public partial class Peripheral : CBPeripheralDelegate, IPeripheral
 {
     readonly BleManager manager;
     readonly ILogger logger;
     readonly IOperationQueue operations;
     IDisposable? autoReconnectSub;
-
 
     public Peripheral(
         BleManager manager,
@@ -34,7 +32,6 @@ public partial class Peripheral : CBPeripheralDelegate, IPeripheral
         this.Native.Delegate = this;
     }
 
-
     public CBPeripheral Native { get; }
 
     public string Uuid { get; }
@@ -43,7 +40,6 @@ public partial class Peripheral : CBPeripheralDelegate, IPeripheral
         .Native
         .GetMaximumWriteValueLength(CBCharacteristicWriteType.WithoutResponse);
 
-    
     public ConnectionState Status => this.Native.State switch
     {
         CBPeripheralState.Connected => ConnectionState.Connected,
@@ -53,13 +49,11 @@ public partial class Peripheral : CBPeripheralDelegate, IPeripheral
         _ => ConnectionState.Disconnected
     };
 
-
     public void CancelConnection()
     {
         this.autoReconnectSub?.Dispose();
         this.manager.Manager.CancelPeripheralConnection(this.Native);
     }
-
 
     public void Connect(ConnectionConfig? config = null)
     {
@@ -71,9 +65,11 @@ public partial class Peripheral : CBPeripheralDelegate, IPeripheral
                 .Skip(1)
                 .Subscribe(_ => this.DoConnect());
         }
+
         this.DoConnect();
     }
 
+    internal IObservable<bool> NativeIsReadyToSendWriteWithoutResponse;
 
     public IObservable<int> ReadRssi() => Observable.Create<int>(ob =>
     {
@@ -89,7 +85,6 @@ public partial class Peripheral : CBPeripheralDelegate, IPeripheral
         return sub;
     });
 
-
     readonly Subject<(int Rssi, InvalidOperationException? Exception)> rssiSubj = new();
     public override void RssiRead(CBPeripheral peripheral, NSNumber rssi, NSError? error)
     {
@@ -99,7 +94,6 @@ public partial class Peripheral : CBPeripheralDelegate, IPeripheral
             this.rssiSubj.OnNext((0, new InvalidOperationException(error.LocalizedDescription)));
     }
 
-
     public IObservable<ConnectionState> WhenStatusChanged() => Observable.Create<ConnectionState>(ob =>
     {
         ob.OnNext(this.Status);
@@ -108,15 +102,14 @@ public partial class Peripheral : CBPeripheralDelegate, IPeripheral
         return () => sub.Dispose();
     });
 
-
     readonly Subject<ConnectionState> connSubj = new();
     internal void ReceiveStateChange(ConnectionState connStatus)
         => this.connSubj.OnNext(connStatus);
 
-
     readonly Subject<BleException> connFailedSubj = new();
     public IObservable<BleException> WhenConnectionFailed() => this.connFailedSubj;
 
+    internal bool IsReadyToWriteWithoutResponse { get; set; }
 
     internal void ConnectionFailed(NSError? error)
     {
@@ -124,13 +117,11 @@ public partial class Peripheral : CBPeripheralDelegate, IPeripheral
         this.connFailedSubj.OnNext(ex);
     }
 
-
     protected void AssertConnnection()
     {
         if (this.Status != ConnectionState.Connected)
             throw new InvalidOperationException("GATT is not connected");
     }
-
 
     protected void DoConnect() => this.manager
         .Manager
@@ -141,10 +132,9 @@ public partial class Peripheral : CBPeripheralDelegate, IPeripheral
             NotifyOnNotification = true
         });
 
-
     protected static BleOperationException ToException(NSError error, string message = "") =>
 #if XAMARIN
-        new (message + error.LocalizedDescription, (int)error.Code);
+        new(message + error.LocalizedDescription, (int)error.Code);
 #else
         new(message + error.LocalizedDescription, error.Code.ToInt32());
 #endif

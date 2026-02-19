@@ -3,12 +3,12 @@ using System.Linq;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Reactive.Threading.Tasks;
+using System.Threading.Tasks;
 using Android.Bluetooth;
 using Microsoft.Extensions.Logging;
 using Shiny.BluetoothLE.Intrastructure;
 
 namespace Shiny.BluetoothLE;
-
 
 public partial class Peripheral : BluetoothGattCallback, IPeripheral
 {
@@ -16,7 +16,6 @@ public partial class Peripheral : BluetoothGattCallback, IPeripheral
     readonly BleManager manager;
     readonly IOperationQueue operations;
     readonly ILogger logger;
-
 
     public Peripheral(
         BleManager manager,
@@ -32,9 +31,13 @@ public partial class Peripheral : BluetoothGattCallback, IPeripheral
         this.operations = operations;
         this.logger = logger;
     }
+    public async Task<BleCharacteristicResult> WriteCharacteristicAsync(string serviceUuid, string characteristicUuid, byte[] data, bool withResponse = true)
+    {
+        throw new NotImplementedException();
+    }
 
     protected static BleOperationException ToException(string message, GattStatus status) =>
-        new (message, (int)status);
+        new(message, (int)status);
 
     public BluetoothDevice Native { get; }
     public BluetoothGatt? Gatt { get; private set; }
@@ -60,12 +63,11 @@ public partial class Peripheral : BluetoothGattCallback, IPeripheral
         }
     }
 
-
     public void CancelConnection()
     {
         if (this.Gatt == null)
             return;
-        
+
         try
         {
             this.RequiresServiceDiscovery = true;
@@ -78,7 +80,6 @@ public partial class Peripheral : BluetoothGattCallback, IPeripheral
         }
         this.connSubj.OnNext(ConnectionState.Disconnected);
     }
-
 
     public void Connect(ConnectionConfig? config)
     {
@@ -117,7 +118,6 @@ public partial class Peripheral : BluetoothGattCallback, IPeripheral
         }
     }
 
-
     Subject<BleException>? connFailSubj;
     public IObservable<BleException> WhenConnectionFailed() => this.connFailSubj ??= new();
 
@@ -135,16 +135,13 @@ public partial class Peripheral : BluetoothGattCallback, IPeripheral
 
         return result.Rssi;
     });
-   
 
     readonly Subject<ConnectionState> connSubj = new();
     public IObservable<ConnectionState> WhenStatusChanged() => this.connSubj.StartWith(this.Status);
 
-
     Subject<(GattStatus Status, int Rssi)>? rssiSubj;
     public override void OnReadRemoteRssi(BluetoothGatt? gatt, int rssi, GattStatus status)
         => this.rssiSubj?.OnNext((status, rssi));
-
 
     public override void OnConnectionStateChange(BluetoothGatt? gatt, GattStatus status, ProfileState newState)
     {
@@ -159,7 +156,6 @@ public partial class Peripheral : BluetoothGattCallback, IPeripheral
         this.connSubj.OnNext(newState.ToStatus());
     }
 
-
     static string GetUuid(BluetoothDevice device)
     {
         var deviceGuid = new byte[16];
@@ -173,7 +169,6 @@ public partial class Peripheral : BluetoothGattCallback, IPeripheral
         macBytes.CopyTo(deviceGuid, 10);
         return new Guid(deviceGuid).ToString();
     }
-
 
     protected void AssertConnection()
     {

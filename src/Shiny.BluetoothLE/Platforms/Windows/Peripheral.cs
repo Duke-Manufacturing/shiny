@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Reactive.Linq;
+using System.Threading.Tasks;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Enumeration;
 
 namespace Shiny.BluetoothLE;
-
 
 public partial class Peripheral : IPeripheral
 {
@@ -16,15 +16,16 @@ public partial class Peripheral : IPeripheral
         this.Uuid = device.BluetoothDeviceId!.ToString();
     }
 
-
-
     public BluetoothLEDevice? Native { get; private set; }
     public DeviceInformation DeviceInfo { get; }
 
     public string Uuid { get; }
-    public string? Name =>this.Native?.Name;
+    public string? Name => this.Native?.Name;
     public int Mtu => -1;
-
+    public async Task<BleCharacteristicResult> WriteCharacteristicAsync(string serviceUuid, string characteristicUuid, byte[] data, bool withResponse = true)
+    {
+        throw new NotImplementedException();
+    }
 
     public ConnectionState Status
     {
@@ -41,7 +42,6 @@ public partial class Peripheral : IPeripheral
         }
     }
 
-
     public IObservable<BleException> WhenConnectionFailed() => null;
 
     public void Connect(ConnectionConfig? config)
@@ -54,7 +54,6 @@ public partial class Peripheral : IPeripheral
         //this.NativeDevice.ConnectionStatusChanged += this.OnNativeConnectionStatusChanged;
         //await this.NativeDevice.GetGattServicesAsync(BluetoothCacheMode.Uncached); // HACK: kick the connection on
     }
-
 
     public void CancelConnection()
     {
@@ -69,9 +68,8 @@ public partial class Peripheral : IPeripheral
         this.Native.Dispose();
         this.Native = null;
 
-        GC.Collect();        
-    }    
-
+        GC.Collect();
+    }
 
     const string SS_KEY = "System.Devices.Aep.SignalStrength";
     public IObservable<int> ReadRssi() => Observable.Create<int>(ob =>
@@ -79,7 +77,6 @@ public partial class Peripheral : IPeripheral
         //if (this.DeviceInfo.Properties.ContainsKey(SS_KEY))
         return () => { };
     });
-
 
     public IObservable<ConnectionState> WhenStatusChanged() => throw new NotImplementedException();
 }
@@ -114,7 +111,6 @@ public partial class Peripheral : IPeripheral
             GC.WaitForPendingFinalizers();
             this.connSubject.OnNext(ConnectionState.Disconnected);
         }
-
 
         public void SetNotifyCharacteristic(GattCharacteristic characteristic)
         {

@@ -1,17 +1,17 @@
 ﻿using System;
-using System.Linq;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reactive;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
 using System.Reactive.Threading.Tasks;
+using System.Threading.Tasks;
 using CoreBluetooth;
 using Foundation;
 using Microsoft.Extensions.Logging;
 using Shiny.BluetoothLE.Intrastructure;
 
 namespace Shiny.BluetoothLE;
-
 
 public partial class Peripheral
 {
@@ -78,12 +78,10 @@ public partial class Peripheral
         return this.notifiers[key];
     }
 
-
     public IObservable<BleCharacteristicInfo> GetCharacteristic(string serviceUuid, string characteristicUuid) => this
         .GetNativeCharacteristic(serviceUuid, characteristicUuid)
         .Select(this.FromNative);
 
-    
     public IObservable<BleCharacteristicInfo> WhenCharacteristicSubscriptionChanged(string serviceUuid, string characteristicUuid) => Observable.Create<BleCharacteristicInfo>(ob =>
     {
         var nsUuid = CBUUID.FromString(serviceUuid);
@@ -113,6 +111,12 @@ public partial class Peripheral
             });
     });
 
+    public async Task<BleCharacteristicResult> WriteCharacteristicAsync(string serviceUuid, string characteristicUuid, byte[] data, bool withResponse = true)
+    {
+        var ch = await this.GetNativeCharacteristic(serviceUuid, characteristicUuid).ToTask();
+
+        return await this.WriteWithoutResponseAsync(ch, data);
+    }
 
     public IObservable<BleCharacteristicResult> WriteCharacteristic(string serviceUuid, string characteristicUuid, byte[] data, bool withResponse = true) => this
         .GetNativeCharacteristic(serviceUuid, characteristicUuid)
@@ -124,7 +128,6 @@ public partial class Peripheral
                 : this.WriteWithoutResponse(ch, data);
         })
         .Switch();
-
 
     public IObservable<IReadOnlyList<BleCharacteristicInfo>> GetCharacteristics(string serviceUuid) => this
         .GetNativeService(serviceUuid)
@@ -152,7 +155,6 @@ public partial class Peripheral
         }))
         .Switch();
 
-
     public IObservable<BleCharacteristicResult> ReadCharacteristic(string serviceUuid, string characteristicUuid) => this
         .GetNativeCharacteristic(serviceUuid, characteristicUuid)
         .Select(ch => this.operations.QueueToObservable(async ct =>
@@ -171,7 +173,6 @@ public partial class Peripheral
         }))
         .Switch();
 
-
     readonly Subject<(CBCharacteristic Char, NSError? Error)> notifySubj = new();
     public override void UpdatedNotificationState(CBPeripheral peripheral, CBCharacteristic characteristic, NSError? error)
     {
@@ -179,14 +180,12 @@ public partial class Peripheral
         this.notifySubj.OnNext((characteristic, error));
     }
 
-    
     readonly Subject<Unit> readyWwrSubj = new();
     public override void IsReadyToSendWriteWithoutResponse(CBPeripheral peripheral)
     {
         this.logger.LogDebug("IsReadyToSendWriteWithoutResponse Fired");
         this.readyWwrSubj.OnNext(Unit.Default);
     }
-    
 
     readonly Subject<(CBService Service, NSError? Error)> charDiscoverySubj = new();
 #if XAMARINIOS
@@ -201,14 +200,12 @@ public partial class Peripheral
         this.charDiscoverySubj.OnNext((service, error));
     }
 
-
     readonly Subject<(CBCharacteristic Char, NSError? Error)> charUpdateSubj = new();
     public override void UpdatedCharacterteristicValue(CBPeripheral peripheral, CBCharacteristic characteristic, NSError? error)
     {
         this.logger.CharacteristicEvent(characteristic, error);
         this.charUpdateSubj.OnNext((characteristic, error));
     }
-
 
     readonly Subject<(CBCharacteristic Char, NSError? Error)> charWroteSubj = new();
     public override void WroteCharacteristicValue(CBPeripheral peripheral, CBCharacteristic characteristic, NSError? error)
@@ -217,13 +214,11 @@ public partial class Peripheral
         this.charWroteSubj.OnNext((characteristic, error));
     }
 
-
     protected BleCharacteristicResult ToResult(CBCharacteristic ch, BleCharacteristicEvent @event) => new(
         this.FromNative(ch),
         @event,
         ch.Value?.ToArray()
     );
-
 
     protected BleCharacteristicInfo FromNative(CBCharacteristic ch) => new(
         this.FromNative(ch.Service!),
@@ -232,10 +227,9 @@ public partial class Peripheral
         (CharacteristicProperties)ch.Properties
     );
 
-
     protected IObservable<CBCharacteristic> GetNativeCharacteristic(string serviceUuid, string characteristicUuid) => this
         .GetNativeService(serviceUuid)
-        .Select(service => this.operations.QueueToObservable(async ct => 
+        .Select(service => this.operations.QueueToObservable(async ct =>
         {
             var uuid = CBUUID.FromString(characteristicUuid);
             var ch = service.Characteristics?.FirstOrDefault(x => x.UUID.Equals(uuid));
@@ -261,7 +255,6 @@ public partial class Peripheral
         }))
         .Switch();
 
-
     protected IObservable<BleCharacteristicResult> WriteWithResponse(CBCharacteristic nativeCh, byte[] value) => this.operations.QueueToObservable(async ct =>
     {
         var data = NSData.FromArray(value);
@@ -275,22 +268,74 @@ public partial class Peripheral
         return this.ToResult(nativeCh, BleCharacteristicEvent.Write);
     });
 
-
     protected IObservable<BleCharacteristicResult> WriteWithoutResponse(CBCharacteristic nativeCh, byte[] value) => this.operations.QueueToObservable(async ct =>
     {
+        ct.ThrowIfCancellationRequested();
+
+        // Wait for peripheral if it cannot send write without response
         if (!this.Native.CanSendWriteWithoutResponse)
         {
             this.logger.CanSendWriteWithoutResponse(nativeCh, false);
-            await this.readyWwrSubj.Take(1).ToTask(ct);
+
+            try
+            {
+                await this.readyWwrSubj.Take(1).ToTask(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                this.logger.LogWarning("WriteWithoutResponse canceled while waiting for readiness");
+                throw;
+            }
+
             this.logger.CanSendWriteWithoutResponse(nativeCh, true);
         }
-        this.logger.LogDebug("Writing characteristic without response");
-        var data = NSData.FromArray(value);
+
+        // Write the chunk
+        this.logger.LogDebug(
+            "Writing characteristic {Uuid} without response, Length={Length}",
+            nativeCh.UUID,
+            value.Length
+        );
+
+        using var data = NSData.FromArray(value);
         this.Native.WriteValue(data, nativeCh, CBCharacteristicWriteType.WithoutResponse);
 
+        // Return reactive result for this chunk
         return this.ToResult(nativeCh, BleCharacteristicEvent.WriteWithoutResponse);
     });
 
+    protected Task<BleCharacteristicResult> WriteWithoutResponseAsync(CBCharacteristic nativeCh, byte[] value) => this.operations.QueueToObservable(async ct =>
+    {
+        ct.ThrowIfCancellationRequested();
+
+        if (!this.Native.CanSendWriteWithoutResponse)
+        {
+            this.logger.CanSendWriteWithoutResponse(nativeCh, false);
+
+            try
+            {
+                await this.readyWwrSubj.Take(1).ToTask(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                this.logger.LogWarning("WriteWithoutResponse canceled while waiting for readiness");
+                throw;
+            }
+
+            this.logger.CanSendWriteWithoutResponse(nativeCh, true);
+        }
+
+        this.logger.LogDebug(
+            "Writing characteristic {Uuid} without response, Length={Length}",
+            nativeCh.UUID,
+            value.Length
+        );
+
+        using var data = NSData.FromArray(value);
+        this.Native.WriteValue(data, nativeCh, CBCharacteristicWriteType.WithoutResponse);
+
+        return this.ToResult(nativeCh, BleCharacteristicEvent.WriteWithoutResponse);
+    }).ToTask();
 
     protected void AssertWrite(CBCharacteristic ch, bool withResponse)
     {

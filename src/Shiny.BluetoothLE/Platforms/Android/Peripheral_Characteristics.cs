@@ -10,16 +10,14 @@ using Shiny.BluetoothLE.Intrastructure;
 
 namespace Shiny.BluetoothLE;
 
-
 public partial class Peripheral
 {
-    public const string NotifyDescriptorUuid = "00002902-0000-1000-8000-00805f9b34fb";    
+    public const string NotifyDescriptorUuid = "00002902-0000-1000-8000-00805f9b34fb";
 
     public IObservable<BleCharacteristicInfo> GetCharacteristic(string serviceUuid, string characteristicUuid) => this
         .GetNativeCharacteristic(serviceUuid, characteristicUuid)
         .Select(this.FromNative);
 
-    
     public IObservable<IReadOnlyList<BleCharacteristicInfo>> GetCharacteristics(string serviceUuid) => this
         .GetNativeService(serviceUuid)
         .Select(service => service
@@ -28,10 +26,9 @@ public partial class Peripheral
             .ToList()
         );
 
-    
     public IObservable<BleCharacteristicResult> ReadCharacteristic(string serviceUuid, string characteristicUuid) => this
         .GetNativeCharacteristic(serviceUuid, characteristicUuid)
-        .Select(ch => this.operations.QueueToObservable(async ct => 
+        .Select(ch => this.operations.QueueToObservable(async ct =>
         {
             this.charEventSubj ??= new();
 
@@ -51,7 +48,6 @@ public partial class Peripheral
             return this.ToResult(ch, BleCharacteristicEvent.Read);
         }))
         .Switch();
-
 
     Subject<BleCharacteristicInfo>? charSubSubj;
     Dictionary<string, IObservable<BleCharacteristicResult>>? notifiers;
@@ -134,7 +130,6 @@ public partial class Peripheral
         return this.notifiers[key];
     }
 
-
     public IObservable<BleCharacteristicInfo> WhenCharacteristicSubscriptionChanged(string serviceUuid, string characteristicUuid) => Observable.Create<BleCharacteristicInfo>(ob =>
     {
         this.charSubSubj ??= new();
@@ -165,7 +160,6 @@ public partial class Peripheral
         return this.charSubSubj.Subscribe(ob.OnNext);
     });
 
-
     protected void TryNotificationCleanup(BluetoothGattCharacteristic ch, string serviceUuid, string characteristicUuid)
     {
         try
@@ -188,7 +182,7 @@ public partial class Peripheral
 
                 if (!this.Gatt!.SetCharacteristicNotification(ch, false))
                     this.logger.DisableNotificationError(null!, serviceUuid, characteristicUuid);
-                
+
                 this.charSubSubj?.OnNext(this.FromNative(ch));
             }
             this.logger.LogDebug($"Cleaned up characteristic subscription: {serviceUuid} / {characteristicUuid}");
@@ -198,7 +192,6 @@ public partial class Peripheral
             this.logger.DisableNotificationError(ex, serviceUuid, characteristicUuid);
         }
     }
-
 
     public IObservable<BleCharacteristicResult> WriteCharacteristic(string serviceUuid, string characteristicUuid, byte[] data, bool withResponse = true) => this
         .GetNativeCharacteristic(serviceUuid, characteristicUuid)
@@ -213,7 +206,7 @@ public partial class Peripheral
                 .ToTask(ct);
 
             ch.WriteType = withResponse ? GattWriteType.Default : GattWriteType.NoResponse;
-            
+
             if (ch.Properties.HasFlag(GattProperty.SignedWrite) && this.Native.BondState == Bond.Bonded)
                 ch.WriteType |= GattWriteType.Signed;
 
@@ -249,8 +242,6 @@ public partial class Peripheral
         }))
         .Switch();
 
-
-
     protected IObservable<BluetoothGattCharacteristic> GetNativeCharacteristic(string serviceUuid, string characteristicUuid) => this
         .GetNativeService(serviceUuid)
         .Select(service =>
@@ -263,22 +254,19 @@ public partial class Peripheral
             return ch;
         });
 
-    
     protected BleCharacteristicResult ToResult(BluetoothGattCharacteristic ch, BleCharacteristicEvent @event) => new BleCharacteristicResult(
         this.FromNative(ch),
         @event,
         ch.GetValue()
     );
 
-    
     protected BleCharacteristicInfo FromNative(BluetoothGattCharacteristic ch) => new BleCharacteristicInfo(
         this.FromNative(ch.Service!),
         ch.Uuid!.ToString(),
         this.IsNotifying(ch),
         (CharacteristicProperties)(int)ch.Properties
     );
-    
-    
+
     List<string>? notifications;
     protected bool IsNotifying(BluetoothGattCharacteristic native)
     {
@@ -287,7 +275,6 @@ public partial class Peripheral
             return this.notifications.Contains(this.NotifyKey(native));
     }
 
-
     protected void AddNotify(BluetoothGattCharacteristic native)
     {
         this.notifications ??= new();
@@ -295,14 +282,12 @@ public partial class Peripheral
             this.notifications.Add(this.NotifyKey(native));
     }
 
-
     protected void RemoveNotify(BluetoothGattCharacteristic native)
     {
         this.notifications ??= new();
         lock (this.notifications)
             this.notifications.Remove(this.NotifyKey(native));
     }
-
 
     protected void ClearNotifications()
     {
@@ -313,7 +298,6 @@ public partial class Peripheral
         }
     }
 
-
     protected string NotifyKey(BluetoothGattCharacteristic native)
     {
         if (native?.Service == null)
@@ -321,7 +305,6 @@ public partial class Peripheral
 
         return $"{native.Service.Uuid}-{native.Uuid}".ToLower();
     }
-
 
     protected byte[] GetNotifyDescriptorBytes(BluetoothGattCharacteristic ch, bool useIndicationsIfAvailable)
     {
@@ -331,7 +314,6 @@ public partial class Peripheral
         return BluetoothGattDescriptor.EnableNotificationValue!.ToArray();
     }
 
-
     Subject<(BluetoothGattCharacteristic Char, GattStatus Status, bool IsWrite)>? charEventSubj;
     public override void OnCharacteristicRead(BluetoothGatt? gatt, BluetoothGattCharacteristic? characteristic, GattStatus status)
     {
@@ -339,13 +321,11 @@ public partial class Peripheral
         this.charEventSubj?.OnNext((characteristic!, status, false));
     }
 
-
     public override void OnCharacteristicWrite(BluetoothGatt? gatt, BluetoothGattCharacteristic? characteristic, GattStatus status)
     {
         this.logger.CharacteristicEvent(characteristic, status);
         this.charEventSubj?.OnNext((characteristic!, status, true));
     }
-
 
     Subject<BluetoothGattCharacteristic>? notifySubj = new();
     public override void OnCharacteristicChanged(BluetoothGatt? gatt, BluetoothGattCharacteristic? characteristic)
